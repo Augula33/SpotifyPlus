@@ -3,6 +3,7 @@
 const react = Spicetify.React;
 const reactDOM = Spicetify.ReactDOM;
 const {
+    CosmosAsync,
     URI,
     React: { useState, useEffect, useCallback },
     Platform: { History },
@@ -12,15 +13,6 @@ const CONFIG = {
     activeTab: "Main",
     tabs: ["Main","Recent Songs"]
 };
-//should be used in the retrieve function
-function ifItemIsTrack(uri) {
-    let uriObj = Spicetify.URI.fromString(uri[0]);
-    switch (uriObj.type) {
-      case Type.TRACK:
-        return true;
-    }
-    return false;
-}
 
 // Top Bar Content component
 const TopBarContent = (props) => {
@@ -54,31 +46,7 @@ const TopBarContent = (props) => {
     );
 };
 
-//Get playlist ID by copying link to playlist, for example
-//https://open.spotify.com/playlist/37i9dQZF1DWXRqgorJj26U?si=9f6A6U2jTk-njyZJ64rk3g ID would be 37i9dQZF1DWXRqgorJj26U
-const playlistId = "2it9p5n9Eit7iGVy1djNP0";
-async function retrieve(playlistId) {
-    try {
-        // Get the playlist using Spicetify wrapper
-        const playlist = await Spicetify.Playlist.get(playlistId);
-        
-        // Extract songs from the playlist
-        const songs = playlist.data.items.map(item => ({
-            name: item.track.name,
-            artist: item.track.artists.map(artist => artist.name).join(', '), // Concatenate artist names if there are multiple
-            duration: item.track.duration_ms, // You can extract other song details as needed
-        }));
 
-        // Sort songs in ascending order by name
-        songs.sort((a, b) => a.name.localeCompare(b.name));
-
-        // Return the sorted songs
-        return songs;
-    } catch (error) {
-        console.error("Error retrieving songs:", error);
-        return []; // Return an empty array if there's an error
-    }
-}
 
 async function retrievenext() {
     const popSongs = [
@@ -90,6 +58,29 @@ async function retrievenext() {
     return popSongs[randomIndex];
   };
 
+const currenturi = [];
+let playlistinfo = '';
+let playlistCreated = false;
+
+async function createPlaylist(){
+    const user = await CosmosAsync.get('https://api.spotify.com/v1/me');
+    playlistinfo = CosmosAsync.post('https://api.spotify.com/v1/users/' + user.id + '/playlists', {
+            name: 'SpotifyPlus Playlist'
+        });
+    return playlistinfo;
+}
+
+
+
+async function addtoplaylist(playlistinfo) {
+    const playlisturi = playlistinfo.uri.split(":")[2]
+    CosmosAsync.post('https://api.spotify.com/v1/playlists/' + playlisturi + '/tracks', {
+            uris: currenturi
+        });
+    //createPlaylist();
+    return true;
+}
+
 
 async function send(){
     /*
@@ -98,11 +89,6 @@ async function send(){
    return true;
 } 
 /*
-const fetchTrack = async (uri) => {
-    const res = await Spicetify.CosmosAsync.get(`https://api.spotify.com/v1/tracks/${uri.split(':')[2]}`);
-    return res.name;
-};
-*/
 async function clearsong() {
     return Spicetify.Platform.LocalStorageAPI.clearItem(this.songname)
         .then(() => true) // Resolves to true if the item is successfully cleared
@@ -121,12 +107,12 @@ clearsong()
 
 async function nextsong(uri){
     Spicetify.Player.playUri(uri);
-
 }
 
 // Example usage:
 const trackUri = "spotify:track:4iV5W9uYEdYUVa79Axb7Rh";
 //
+let tempplaylist = '';
 async function handleLike() {
     try {
         // Assuming send() is an asynchronous function
@@ -134,21 +120,23 @@ async function handleLike() {
     } catch (error) {
         console.error("Error sending like to LLM:", error);
     }
-
-    let uri;
-    try {
-        // Assuming retrievenext() is an asynchronous function
-        uri = await retrievenext();
-    } catch (error) {
-        console.error("Error retrieving next song from LLM:", error);
+    if (!playlistCreated){
+        try {
+            playlistCreated = true
+            tempplaylist = await createPlaylist();            
+            await addtoplaylist(tempplaylist);
+        } catch (error) {
+        console.error("Error creating playlist:", error);
     }
-
-    try {
-        // Assuming nextsong(uri) is an asynchronous function
-        await nextsong(uri);
-    } catch (error) {
-        console.error("Error playing next song:", error);
     }
+    else { 
+        try {
+            await addtoplaylist(tempplaylist);
+    } catch (error) {
+        console.error("Error adding song to playlist:", error);
+    }
+    }
+    
 
 }
 
@@ -160,23 +148,8 @@ async function handleDislike() {
         console.error("Error sending like to LLM:", error);
     }
 
-    let uri;
-    try {
-        // Assuming retrievenext() is an asynchronous function
-        uri = await retrievenext();
-    } catch (error) {
-        console.error("Error retrieving next song from LLM:", error);
-    }
-
-    try {
-        // Assuming nextsong(uri) is an asynchronous function
-        await nextsong(uri);
-    } catch (error) {
-        console.error("Error playing next song:", error);
-    }
-
 }
-async function handleSkip() {
+async function handlePlayNext() {
     try {
         // Assuming send() is an asynchronous function
         await send("skipped");
@@ -188,6 +161,8 @@ async function handleSkip() {
     try {
         // Assuming retrievenext() is an asynchronous function
         uri = await retrievenext();
+        currenturi.length = 0;
+        currenturi.push(uri);
     } catch (error) {
         console.error("Error retrieving next song from LLM:", error);
     }
@@ -198,11 +173,6 @@ async function handleSkip() {
     } catch (error) {
         console.error("Error playing next song:", error);
     }
-
-}
-function handlePlaySong(){
-    nextsong(trackUri);
-    return 
 }
 // The main custom app render function. The component returned is what is rendered in Spotify.
 function render() {
@@ -260,25 +230,6 @@ class Grid extends react.Component {
                     },
                 },
                 react.createElement("button", {
-                    onClick: handlePlaySong,
-                    style: {
-                        backgroundColor: "orange", // Change the background color of the button
-                        color: "white", // Change the text color of the button
-                        border: "none", // Remove the border
-                        padding: "10px 20px", // Add padding
-                        borderRadius: "5px", // Add border radius
-                        marginBottom: "30px" // Add margin to separate from the buttons below
-                    }
-                }, "Play Song"),
-                ),
-                react.createElement("div", {
-                    style: {
-                        display: "flex",
-                        justifyContent: "space-around", // This will evenly distribute the buttons
-                        
-                    },
-                },
-                react.createElement("button", {
                     //onClick: () => handleDislike(param1, param2), // Call handleDislike with parameters
                     onClick: handleDislike,
                     style: {
@@ -290,7 +241,7 @@ class Grid extends react.Component {
                     }
                 }, "Dislike"),
                 react.createElement("button", {
-                    onClick: handleSkip,
+                    onClick: handlePlayNext,
                     style: {
                         backgroundColor: "blue", // Change the background color of the button
                         color: "white", // Change the text color of the button
@@ -298,7 +249,7 @@ class Grid extends react.Component {
                         padding: "10px 20px", // Add padding
                         borderRadius: "5px", // Add border radius
                     }
-                }, "Skip"),
+                }, "Play Next"),
                 react.createElement("button", {
                     onClick: handleLike,
                     style: {
