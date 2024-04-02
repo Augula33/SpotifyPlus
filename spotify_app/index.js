@@ -75,10 +75,15 @@ async function createPlaylist(){
 async function addtoplaylist(playlistinfo) {
     const playlisturi = playlistinfo.uri.split(":")[2]
     CosmosAsync.post('https://api.spotify.com/v1/playlists/' + playlisturi + '/tracks', {
-            uris: currenturi
+            uris: likedlist
         });
     //createPlaylist();
     return true;
+}
+
+const likedlist = [];
+async function addSongToLiked(song){
+    likedlist.push(song);
 }
 
 
@@ -113,6 +118,7 @@ async function nextsong(uri){
 const trackUri = "spotify:track:4iV5W9uYEdYUVa79Axb7Rh";
 //
 let tempplaylist = '';
+let uri = '';
 async function handleLike() {
     try {
         // Assuming send() is an asynchronous function
@@ -120,21 +126,10 @@ async function handleLike() {
     } catch (error) {
         console.error("Error sending like to LLM:", error);
     }
-    if (!playlistCreated){
-        try {
-            playlistCreated = true
-            tempplaylist = await createPlaylist();            
-            await addtoplaylist(tempplaylist);
-        } catch (error) {
-        console.error("Error creating playlist:", error);
-    }
-    }
-    else { 
-        try {
-            await addtoplaylist(tempplaylist);
+    try{
+        addSongToLiked(uri);
     } catch (error) {
-        console.error("Error adding song to playlist:", error);
-    }
+        console.error("Error adding song to liked songs:", error);
     }
     
 
@@ -157,7 +152,6 @@ async function handlePlayNext() {
         console.error("Error sending like to LLM:", error);
     }
 
-    let uri;
     try {
         // Assuming retrievenext() is an asynchronous function
         uri = await retrievenext();
@@ -172,6 +166,31 @@ async function handlePlayNext() {
         await nextsong(uri);
     } catch (error) {
         console.error("Error playing next song:", error);
+    }
+}
+async function handleCreatePlaylist() {
+    try {
+        // Assuming send() is an asynchronous function
+        await send("playlist created");
+    } catch (error) {
+        console.error("Error sending playlist state to LLM:", error);
+    }
+
+    if (!playlistCreated){
+        try {
+            playlistCreated = true
+            tempplaylist = await createPlaylist();            
+            await addtoplaylist(tempplaylist);
+        } catch (error) {
+        console.error("Error creating playlist:", error);
+    }
+    }
+    else { 
+        try {
+            await addtoplaylist(tempplaylist);
+    } catch (error) {
+        console.error("Error adding song to playlist:", error);
+    }
     }
 }
 // The main custom app render function. The component returned is what is rendered in Spotify.
@@ -209,7 +228,19 @@ class Grid extends react.Component {
                     justifyContent: "space-between", // This will evenly distribute the items
                     flexWrap: "wrap", // Allow items to wrap to the next line if needed
                 },
-            }),
+            },
+                react.createElement("button", {
+                    //onClick: () => handleDislike(param1, param2), // Call handleDislike with parameters
+                    onClick: handleCreatePlaylist,
+                    style: {
+                        backgroundColor: "purple", // Change the background color of the button
+                        color: "white", // Change the text color of the button
+                        border: "none", // Remove the border
+                        padding: "10px 20px", // Add padding
+                        borderRadius: "5px", // Add border radius
+                    }
+                }, "Create Playlist"),
+            ),
             react.createElement("footer", {
                 style: {
                     margin: "auto",
